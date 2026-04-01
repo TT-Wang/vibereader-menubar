@@ -162,6 +162,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func refreshFeed(_ sender: Any?) {
+        fputs("refreshFeed: triggered\n", stderr)
         guard let url = URL(string: "\(Config.apiURL)/refresh") else {
             fputs("refreshFeed: invalid URL\n", stderr)
             return
@@ -169,11 +170,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        URLSession.shared.dataTask(with: request) { [weak self] _, _, error in
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             if let error = error {
                 fputs("refreshFeed error: \(error.localizedDescription)\n", stderr)
                 return
+            }
+            if let http = response as? HTTPURLResponse {
+                fputs("refreshFeed: \(http.statusCode)\n", stderr)
             }
             self?.fetchArticles()
         }.resume()
