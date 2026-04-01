@@ -101,13 +101,16 @@ class AppState: ObservableObject {
         URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
             if let error = error {
                 fputs("refreshFeed error: \(error.localizedDescription)\n", stderr)
+                DispatchQueue.main.async { self?.isRefreshing = false }
+                return
             }
             if let http = response as? HTTPURLResponse {
                 fputs("refreshFeed: \(http.statusCode)\n", stderr)
             }
-            self?.fetchArticles()
-            DispatchQueue.main.async {
-                self?.isRefreshing = false
+            // Wait for server-side fetch to complete before re-fetching articles
+            DispatchQueue.global().asyncAfter(deadline: .now() + 3.0) {
+                self?.fetchArticles()
+                DispatchQueue.main.async { self?.isRefreshing = false }
             }
         }.resume()
     }
