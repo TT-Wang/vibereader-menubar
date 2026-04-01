@@ -176,7 +176,7 @@ struct PopoverContentView: View {
             .foregroundColor(.secondary)
             .padding(.vertical, 8)
         }
-        .frame(width: 380, maxHeight: 500)
+        .frame(width: 380, height: 500)
         .background(Color(nsColor: .windowBackgroundColor))
     }
 
