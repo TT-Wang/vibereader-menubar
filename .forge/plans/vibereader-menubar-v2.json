@@ -1,0 +1,35 @@
+{
+  "objective": "Redesign the vibereader macOS menu bar app from a basic NSMenu dropdown to a modern NSPopover-based mini app with SwiftUI views",
+  "created": "2026-04-01T00:00:00.000Z",
+  "techStack": {
+    "language": "swift",
+    "testCommand": "grep -c 'NSPopover\\|SwiftUI\\|@StateObject\\|ScrollView\\|TextField' /root/vibereader-menubar/Sources/VibereaderMenuBar/main.swift",
+    "buildCommand": "cd /root/vibereader-menubar && swift build 2>&1 | tail -5",
+    "lintCommand": "grep -n 'TODO\\|FIXME\\|HACK' /root/vibereader-menubar/Sources/VibereaderMenuBar/main.swift || true"
+  },
+  "modules": [
+    {
+      "id": "m1",
+      "title": "Rewrite main.swift with NSPopover + SwiftUI views",
+      "objective": "Replace the NSMenu-based AppDelegate with an NSPopover-based architecture. The AppDelegate must: (1) create an NSStatusItem with button title 'V', (2) create an NSPopover with a SwiftUI NSHostingView as contentViewController, (3) toggle the popover on status button click using popover.show/close(relativeTo:of:preferredEdge:), (4) implement NSPopoverDelegate to close on click-away. The SwiftUI root view 'PopoverContentView' must: accept @ObservedObject AppState (which is an ObservableObject holding: articles: [Article], lastFetched: Date?, isRefreshing: Bool, searchText: String), render a header row with bold 'Vibereader' title, a 'fetched X min ago' Text, and a refresh Button that shows ProgressView when isRefreshing==true, render a TextField bound to AppState.searchText for filtering, render a ScrollView containing a VStack of ArticleRowView cards for each article whose title/source/categories contain searchText (case-insensitive), render a footer Button('Quit Vibereader') that calls NSApplication.shared.terminate(nil). Each ArticleRowView must: display article.title as bold Text, display article.score as a colored RoundedRectangle badge (green if >2.0, yellow if >1.0, gray otherwise), display article.categories as HStack of colored pill labels, display article.source as small gray Text, apply .background on hover using onHover modifier, open article.url in NSWorkspace.shared.open() on tap (Button action). The popover frame must be width=380, maxHeight=500. Networking (fetchArticles POSTing to Config.apiURL/api/articles, refreshFeed POSTing to Config.apiURL/refresh) must move into AppState as @MainActor methods. The existing Config, Article, FeedResponse structs and the setActivationPolicy(.accessory) call must be preserved exactly.",
+      "dependsOn": [],
+      "agent": "worker",
+      "files": [
+        "/root/vibereader-menubar/Sources/VibereaderMenuBar/main.swift"
+      ],
+      "verify": [
+        "grep -c 'NSPopover' /root/vibereader-menubar/Sources/VibereaderMenuBar/main.swift | grep -v '^0$'",
+        "grep -c 'SwiftUI' /root/vibereader-menubar/Sources/VibereaderMenuBar/main.swift | grep -v '^0$'",
+        "grep -c 'ScrollView' /root/vibereader-menubar/Sources/VibereaderMenuBar/main.swift | grep -v '^0$'",
+        "grep -c 'TextField' /root/vibereader-menubar/Sources/VibereaderMenuBar/main.swift | grep -v '^0$'",
+        "grep -c 'setActivationPolicy' /root/vibereader-menubar/Sources/VibereaderMenuBar/main.swift | grep -v '^0$'",
+        "grep -c 'ObservableObject\\|@StateObject\\|@ObservedObject' /root/vibereader-menubar/Sources/VibereaderMenuBar/main.swift | grep -v '^0$'",
+        "grep -c 'onHover\\|ArticleRowView\\|PopoverContentView' /root/vibereader-menubar/Sources/VibereaderMenuBar/main.swift | grep -v '^0$'",
+        "grep -c 'class AppDelegate' /root/vibereader-menubar/Sources/VibereaderMenuBar/main.swift | grep -v '^0$'",
+        "grep 'NSMenu\\b' /root/vibereader-menubar/Sources/VibereaderMenuBar/main.swift && echo 'FAIL: NSMenu still present' && exit 1 || echo 'PASS: NSMenu removed'"
+      ],
+      "doneWhen": "main.swift contains NSPopover toggle, SwiftUI PopoverContentView with header/search/scroll/footer, ArticleRowView with score badge and category pills, AppState ObservableObject with networking, and no bare NSMenu usage. All 9 verify commands pass.",
+      "complexity": "complex"
+    }
+  ]
+}

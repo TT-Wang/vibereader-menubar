@@ -31,6 +31,20 @@ struct FeedResponse: Decodable {
     }
 }
 
+// MARK: - Claude Status
+
+struct ClaudeStatus: Decodable {
+    let claudeActive: Bool
+    let idleSeconds: Int
+    let toolCallCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case claudeActive = "claude_active"
+        case idleSeconds = "idle_seconds"
+        case toolCallCount = "tool_call_count"
+    }
+}
+
 // MARK: - AppState
 
 class AppState: ObservableObject {
@@ -38,6 +52,8 @@ class AppState: ObservableObject {
     @Published var lastFetched: Date? = nil
     @Published var isRefreshing: Bool = false
     @Published var searchText: String = ""
+    @Published var claudeActive: Bool = false
+    @Published var claudeIdleSeconds: Int = -1
 
     var filteredArticles: [Article] {
         let sorted = articles.sorted { $0.score > $1.score }
@@ -80,6 +96,18 @@ class AppState: ObservableObject {
                 }
             } catch {
                 fputs("fetchArticles decode error: \(error)\n", stderr)
+            }
+        }.resume()
+    }
+
+    func fetchStatus() {
+        guard let url = URL(string: "\(Config.apiURL)/api/status") else { return }
+        URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+            guard let self = self, let data = data,
+                  let status = try? JSONDecoder().decode(ClaudeStatus.self, from: data) else { return }
+            DispatchQueue.main.async {
+                self.claudeActive = status.claudeActive
+                self.claudeIdleSeconds = status.idleSeconds
             }
         }.resume()
     }
@@ -167,6 +195,11 @@ struct PopoverContentView: View {
                 Text("Vibereader")
                     .font(.headline)
                     .fontWeight(.bold)
+                // Claude status indicator
+                Circle()
+                    .fill(state.claudeActive ? Color.green : Color.gray)
+                    .frame(width: 8, height: 8)
+                    .help(state.claudeActive ? "Claude is working" : "Claude is idle")
                 Spacer()
                 Text(timeAgoText)
                     .font(.caption)
@@ -308,6 +341,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     var popover: NSPopover!
     var appState = AppState()
     var refreshTimer: Timer?
+    var statusTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         fputs("VibereaderMenuBar: launching...\n", stderr)
@@ -327,10 +361,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         popover.contentViewController = NSHostingController(rootView: PopoverContentView(state: appState))
 
         appState.fetchArticles()
+        appState.fetchStatus()
 
+        // Refresh articles every 60s
         let timer = Timer(timeInterval: 60, target: self, selector: #selector(timerFired(_:)), userInfo: nil, repeats: true)
         RunLoop.main.add(timer, forMode: .common)
         refreshTimer = timer
+
+        // Poll Claude status every 10s
+        let sTimer = Timer(timeInterval: 10, target: self, selector: #selector(statusTimerFired(_:)), userInfo: nil, repeats: true)
+        RunLoop.main.add(sTimer, forMode: .common)
+        statusTimer = sTimer
+
         fputs("VibereaderMenuBar: ready\n", stderr)
     }
 
@@ -340,13 +382,28 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             popover.performClose(sender)
         } else {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            // Ensure popover window becomes key for keyboard input (search field)
             popover.contentViewController?.view.window?.makeKey()
         }
     }
 
     @objc func timerFired(_ timer: Timer) {
         appState.fetchArticles()
+    }
+
+    @objc func statusTimerFired(_ timer: Timer) {
+        appState.fetchStatus()
+        updateIcon()
+    }
+
+    func updateIcon() {
+        guard let button = statusItem.button else { return }
+        if appState.claudeActive {
+            button.title = "V"
+            button.contentTintColor = .systemGreen
+        } else {
+            button.title = "V"
+            button.contentTintColor = nil
+        }
     }
 }
 
