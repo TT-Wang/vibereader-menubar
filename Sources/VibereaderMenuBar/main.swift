@@ -90,6 +90,8 @@ class AppState: ObservableObject {
             return
         }
 
+        let oldFetchedAt = lastFetched
+
         DispatchQueue.main.async {
             self.isRefreshing = true
         }
@@ -107,15 +109,49 @@ class AppState: ObservableObject {
             if let http = response as? HTTPURLResponse {
                 fputs("refreshFeed: \(http.statusCode)\n", stderr)
             }
-            // Server fetch takes ~6s. Poll twice: at 4s and 8s to catch the update.
-            DispatchQueue.global().asyncAfter(deadline: .now() + 4.0) {
-                self?.fetchArticles()
-            }
-            DispatchQueue.global().asyncAfter(deadline: .now() + 8.0) {
-                self?.fetchArticles()
-                DispatchQueue.main.async { self?.isRefreshing = false }
-            }
+            // Poll until fetched_at changes or timeout after 15s
+            self?.pollForUpdate(oldFetchedAt: oldFetchedAt, attempt: 0)
         }.resume()
+    }
+
+    func pollForUpdate(oldFetchedAt: Date?, attempt: Int) {
+        guard attempt < 8 else {
+            fputs("refreshFeed: timed out waiting for update\n", stderr)
+            DispatchQueue.main.async { self.isRefreshing = false }
+            return
+        }
+
+        DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            guard let self = self,
+                  let url = URL(string: "\(Config.apiURL)/api/articles") else { return }
+
+            URLSession.shared.dataTask(with: url) { data, _, error in
+                guard let data = data else {
+                    self.pollForUpdate(oldFetchedAt: oldFetchedAt, attempt: attempt + 1)
+                    return
+                }
+
+                if let feed = try? JSONDecoder().decode(FeedResponse.self, from: data) {
+                    let serverDate = ISO8601DateFormatter().date(from: feed.fetchedAt)
+                    let changed = (serverDate != nil && serverDate != oldFetchedAt)
+
+                    if changed {
+                        fputs("refreshFeed: articles updated\n", stderr)
+                        DispatchQueue.main.async {
+                            withAnimation {
+                                self.articles = feed.articles
+                            }
+                            self.lastFetched = serverDate
+                            self.isRefreshing = false
+                        }
+                    } else {
+                        self.pollForUpdate(oldFetchedAt: oldFetchedAt, attempt: attempt + 1)
+                    }
+                } else {
+                    self.pollForUpdate(oldFetchedAt: oldFetchedAt, attempt: attempt + 1)
+                }
+            }.resume()
+        }
     }
 }
 
