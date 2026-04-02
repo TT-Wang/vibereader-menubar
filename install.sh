@@ -18,7 +18,7 @@ curl -sL "$BASE/vibereader_web.py" -o "$DIR/vibereader_web.py"
 
 # Install Python deps
 echo "  Installing dependencies..."
-pip3 install -q vibereader feedparser aiohttp 2>/dev/null || pip install -q vibereader feedparser aiohttp 2>/dev/null
+pip3 install -q feedparser aiohttp 2>/dev/null || pip install -q feedparser aiohttp 2>/dev/null
 
 # Create launcher
 cat > "$BIN_DIR/vibereader" <<'LAUNCHER'

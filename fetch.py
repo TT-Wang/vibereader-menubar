@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """Standalone fetch module for vibereader-menubar.
 
-This module is a self-contained copy of the fetch orchestration logic from the
-vibereader plugin. It exposes `async def run_fetch()` as the public API so that
-the menubar web server and tray app can import and invoke it directly, with no
-dependency on the plugin directory.
+Fully self-contained — no external dependencies beyond feedparser and aiohttp.
+Fetches from Hacker News API + RSS feeds, tags by category, scores by relevance.
 
 Usage as a module:
     from fetch import run_fetch
@@ -18,35 +16,30 @@ import json
 import os
 import re
 import sys
+from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
-from dataclasses import asdict
 
 try:
     import feedparser
-    _FEEDPARSER_AVAILABLE = True
+    _FEEDPARSER = True
 except ImportError:
-    _FEEDPARSER_AVAILABLE = False
+    _FEEDPARSER = False
 
 try:
     import aiohttp
-    _AIOHTTP_AVAILABLE = True
+    _AIOHTTP = True
 except ImportError:
-    _AIOHTTP_AVAILABLE = False
+    _AIOHTTP = False
 
-try:
-    from vibereader.config import load_config
-    from vibereader.feeds.hn import fetch_hn
-    from vibereader.feeds.rss import fetch_rss
-    _VIBEREADER_AVAILABLE = True
-except ImportError:
-    print("vibereader not installed. Run: pip install vibereader", file=sys.stderr)
-    _VIBEREADER_AVAILABLE = False
 
 ARTICLES_PATH = os.path.expanduser("~/.vibereader/articles.json")
 PREFERENCES_PATH = os.path.expanduser("~/.vibereader/preferences.json")
 
+HN_TOP_URL = "https://hacker-news.firebaseio.com/v0/topstories.json"
+HN_ITEM_URL = "https://hacker-news.firebaseio.com/v0/item/{}.json"
+
 SOURCE_FEEDS = {
-    'hn': None,  # Special: uses fetch_hn(), not RSS
+    'hn': None,
     'hnrss': 'https://hnrss.org/newest?points=100',
     'techcrunch': 'https://techcrunch.com/feed/',
     'theverge': 'https://www.theverge.com/rss/index.xml',
@@ -80,20 +73,121 @@ CATEGORY_KEYWORDS = {
 }
 
 
+@dataclass
+class Article:
+    id: str
+    title: str
+    url: str
+    source: str
+    author: str
+    score: float
+    fetched_at: str
+    summary: str = ''
+
+
+# ── Fetchers (inline, no external package needed) ─────────────
+
+
+async def fetch_hn(limit=20):
+    """Fetch top stories from Hacker News API using aiohttp."""
+    if not _AIOHTTP:
+        return []
+    articles = []
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(HN_TOP_URL, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                ids = await resp.json()
+
+            tasks = []
+            for item_id in ids[:limit]:
+                tasks.append(_fetch_hn_item(session, item_id))
+            results = await asyncio.gather(*tasks)
+            for a in results:
+                if a:
+                    articles.append(a)
+    except Exception as e:
+        print(f"[vibe] HN fetch failed: {e}", file=sys.stderr)
+    return articles
+
+
+async def _fetch_hn_item(session, item_id):
+    try:
+        async with session.get(HN_ITEM_URL.format(item_id), timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            data = await resp.json()
+        if not data or data.get('type') != 'story':
+            return None
+        return Article(
+            id=str(data.get('id', '')),
+            title=data.get('title', ''),
+            url=data.get('url', f"https://news.ycombinator.com/item?id={data.get('id', '')}"),
+            source='HN',
+            author=data.get('by', ''),
+            score=data.get('score', 0),
+            fetched_at=datetime.now(timezone.utc).isoformat(),
+        )
+    except Exception:
+        return None
+
+
+async def fetch_rss(url, limit=10):
+    """Fetch articles from an RSS feed using feedparser."""
+    if not _FEEDPARSER:
+        return []
+    articles = []
+    try:
+        raw = None
+        if _AIOHTTP:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    headers = {'User-Agent': 'Vibereader/0.3 (+https://github.com/TT-Wang/vibereader-menubar)'}
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=15), headers=headers) as resp:
+                        raw = await resp.text()
+            except Exception:
+                raw = None
+        if raw is None:
+            loop = asyncio.get_event_loop()
+            feed = await loop.run_in_executor(None, feedparser.parse, url)
+        else:
+            feed = feedparser.parse(raw)
+
+        now = datetime.now(timezone.utc).isoformat()
+        for entry in feed.get('entries', [])[:limit]:
+            link = entry.get('link', '')
+            if not link:
+                continue
+            summary_raw = entry.get('summary', '') or entry.get('description', '')
+            summary_clean = re.sub(r'<[^>]+>', '', summary_raw).strip()
+            if len(summary_clean) > 150:
+                summary_clean = summary_clean[:150] + '...'
+            articles.append(Article(
+                id=link,
+                title=entry.get('title', ''),
+                url=link,
+                source=feed.get('feed', {}).get('title', url[:30]),
+                author=entry.get('author', ''),
+                score=0,
+                fetched_at=now,
+                summary=summary_clean,
+            ))
+    except Exception as e:
+        print(f"[vibe] RSS fetch failed ({url[:40]}): {e}", file=sys.stderr)
+    return articles
+
+
+# ── Helpers ────────────────────────────────────────────────────
+
+
 def load_preferences():
-    """Load preferences from ~/.vibereader/preferences.json, return None if not present."""
     if not os.path.exists(PREFERENCES_PATH):
         return None
     try:
         with open(PREFERENCES_PATH) as f:
             return json.load(f)
-    except Exception as e:
-        print(f"[vibe] Failed to load preferences: {e}", file=sys.stderr)
+    except Exception:
         return None
 
 
 def tag_article(title, url):
-    """Return list of matching category strings based on title and url."""
     text = (title + ' ' + url).lower()
     matched = []
     for category, keywords in CATEGORY_KEYWORDS.items():
@@ -105,17 +199,12 @@ def tag_article(title, url):
 
 
 def score_article(article_dict, prefs):
-    """Return a float score for an article based on HN points, recency, and preferences."""
-    # Base score from HN points (capped at 1.0)
     base = min(article_dict.get('score', 0) / 100, 1.0)
-
-    # Recency bonus based on fetched_at
     fetched_at = article_dict.get('fetched_at', '')
     recency = 0.0
     if fetched_at:
         try:
             if isinstance(fetched_at, str):
-                # Parse ISO format; handle both offset-aware and naive
                 if fetched_at.endswith('Z'):
                     fetched_dt = datetime.fromisoformat(fetched_at.replace('Z', '+00:00'))
                 else:
@@ -126,146 +215,61 @@ def score_article(article_dict, prefs):
                 fetched_dt = fetched_at
                 if fetched_dt.tzinfo is None:
                     fetched_dt = fetched_dt.replace(tzinfo=timezone.utc)
-            now = datetime.now(timezone.utc)
-            age_seconds = (now - fetched_dt).total_seconds()
+            age_seconds = (datetime.now(timezone.utc) - fetched_dt).total_seconds()
             if age_seconds < 3600:
                 recency = 1.0
             elif age_seconds < 21600:
                 recency = 0.5
         except Exception:
             pass
-
-    # Preference match bonus (only if prefs provided)
     pref_bonus = 0.0
     if prefs is not None:
-        preferred_categories = set(prefs.get('categories', []))
-        article_categories = set(article_dict.get('categories', []))
-        matches = len(preferred_categories & article_categories)
-        pref_bonus = min(matches * 0.5, 1.0)
-
+        preferred = set(prefs.get('categories', []))
+        matched = set(article_dict.get('categories', []))
+        pref_bonus = min(len(preferred & matched) * 0.5, 1.0)
     return base + recency + pref_bonus
 
 
-def serialize_article(a):
-    d = asdict(a)
-    for k, v in d.items():
-        if isinstance(v, datetime):
-            d[k] = v.isoformat()
-    return d
-
-
-async def safe_fetch(coro, source_name):
-    """Run a fetch coroutine, return empty list on failure."""
-    try:
-        return await coro
-    except Exception as e:
-        print(f"[vibe] {source_name} fetch failed: {e}", file=sys.stderr)
-        return []
-
-
-# Module-level cache of url -> summary string, populated during run_fetch()
-_summaries = {}
-
-
-async def fetch_rss_with_summaries(url):
-    """Fetch an RSS feed and return a dict mapping article URL -> summary string.
-
-    Extracts the summary/description field from each entry, strips HTML tags,
-    and truncates to 150 characters. Returns {} on any failure or if feedparser
-    is not installed.
-    """
-    if not _FEEDPARSER_AVAILABLE:
-        return {}
-    try:
-        raw = None
-        if _AIOHTTP_AVAILABLE:
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                        raw = await resp.text()
-            except Exception:
-                raw = None
-        if raw is None:
-            # Fallback: feedparser can fetch synchronously; run in executor to avoid blocking
-            loop = asyncio.get_event_loop()
-            feed = await loop.run_in_executor(None, feedparser.parse, url)
-        else:
-            feed = feedparser.parse(raw)
-
-        result = {}
-        for entry in feed.get('entries', []):
-            entry_url = entry.get('link', '')
-            if not entry_url:
-                continue
-            raw_summary = entry.get('summary', '') or entry.get('description', '')
-            # Strip HTML tags
-            clean = re.sub(r'<[^>]+>', '', raw_summary).strip()
-            # Truncate to 150 chars
-            if len(clean) > 150:
-                clean = clean[:150] + '...'
-            result[entry_url] = clean
-        return result
-    except Exception as e:
-        print(f"[vibe] Summary fetch failed for {url[:40]}: {e}", file=sys.stderr)
-        return {}
+# ── Main fetch orchestrator ───────────────────────────────────
 
 
 async def run_fetch() -> None:
-    """Fetch articles from all configured sources and save to ~/.vibereader/articles.json.
-
-    This is the public API for this module. Equivalent to main() in the plugin's
-    fetch-and-save.py script.
-    """
-    global _summaries
-
-    if not _VIBEREADER_AVAILABLE:
-        print("[vibe] Cannot fetch: vibereader package not installed. Run: pip install vibereader", file=sys.stderr)
+    """Fetch articles from all configured sources and save to ~/.vibereader/articles.json."""
+    if not _AIOHTTP:
+        print("[vibe] aiohttp not installed. Run: pip3 install aiohttp", file=sys.stderr)
+        return
+    if not _FEEDPARSER:
+        print("[vibe] feedparser not installed. Run: pip3 install feedparser", file=sys.stderr)
         return
 
     prefs = load_preferences()
 
     # Resolve active sources
     if prefs and prefs.get('sources'):
-        active_sources = set()
+        active = set()
         for s in prefs['sources']:
             if s in LEGACY_SOURCE_MAP:
-                active_sources.update(LEGACY_SOURCE_MAP[s])
+                active.update(LEGACY_SOURCE_MAP[s])
             elif s in SOURCE_FEEDS:
-                active_sources.add(s)
-        # Always include 'hn' if it was in the original pref or legacy mapped
-        if not active_sources:
-            active_sources = set(SOURCE_FEEDS.keys())
+                active.add(s)
+        if not active:
+            active = set(SOURCE_FEEDS.keys())
     else:
-        active_sources = set(SOURCE_FEEDS.keys())
+        active = set(SOURCE_FEEDS.keys())
 
-    article_tasks = []
-    rss_urls = []
-
-    if 'hn' in active_sources:
-        article_tasks.append(safe_fetch(fetch_hn(limit=20), "HackerNews"))
-
+    tasks = []
+    if 'hn' in active:
+        tasks.append(fetch_hn(limit=20))
     for name, url in SOURCE_FEEDS.items():
         if name == 'hn' or url is None:
             continue
-        if name in active_sources:
-            article_tasks.append(safe_fetch(fetch_rss(url, limit=10), f"RSS({name})"))
-            rss_urls.append(url)
+        if name in active:
+            tasks.append(fetch_rss(url, limit=10))
 
-    summary_tasks = [fetch_rss_with_summaries(url) for url in rss_urls]
+    results = await asyncio.gather(*tasks)
 
-    # Run article fetches and summary fetches in parallel
-    all_results = await asyncio.gather(
-        asyncio.gather(*article_tasks),
-        asyncio.gather(*summary_tasks),
-    )
-    results, summary_results = all_results
-
-    # Merge all url->summary dicts into the module-level cache
-    for sd in summary_results:
-        _summaries.update(sd)
-
-    articles = []
     seen = set()
+    articles = []
     for batch in results:
         for a in batch:
             if a.id not in seen:
@@ -274,10 +278,9 @@ async def run_fetch() -> None:
 
     serialized = []
     for a in articles:
-        d = serialize_article(a)
+        d = asdict(a)
         d['categories'] = tag_article(d.get('title', ''), d.get('url', ''))
         d['score'] = score_article(d, prefs)
-        d['summary'] = _summaries.get(d.get('url', ''), '')
         serialized.append(d)
 
     serialized.sort(key=lambda d: d['score'], reverse=True)
