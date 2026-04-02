@@ -208,8 +208,12 @@ def build_display(articles, state, total, fetched_at, claude_active, term_width)
             renderables.append(title_text)
 
             # Summary lines with vertical bar prefix
-            if summary:
-                summary_lines = wrap_text(summary, term_width)
+            # Filter out URL-only "summaries"
+            clean_summary = summary
+            if clean_summary and (clean_summary.startswith('http') or clean_summary.startswith('Article URL:')):
+                clean_summary = ''
+            if clean_summary:
+                summary_lines = wrap_text(clean_summary, term_width)
                 for line in summary_lines:
                     line_text = Text()
                     line_text.append(" ┃  ", style="dim cyan")
@@ -266,13 +270,17 @@ def build_display(articles, state, total, fetched_at, claude_active, term_width)
 
 
 def kb_listener(state):
-    """Listen for keyboard input using cbreak mode (compatible with rich Live)."""
-    import tty
-    import termios
-    fd = sys.stdin.fileno()
-    old = termios.tcgetattr(fd)
+    """Listen for keyboard input using cbreak mode."""
     try:
-        tty.setcbreak(fd)  # cbreak instead of raw — lets rich handle escape sequences
+        import tty
+        import termios
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+    except (termios.error, ValueError, AttributeError):
+        # Not a real TTY (e.g. piped input) — skip keyboard listener
+        return
+    try:
+        tty.setcbreak(fd)
         while not state.quit:
             if select.select([sys.stdin], [], [], 0.2)[0]:
                 ch = sys.stdin.read(1)
@@ -285,8 +293,13 @@ def kb_listener(state):
                         state.page_offset -= PAGE_SIZE
                     elif ch == 'r':
                         state.force_refresh = True
+    except Exception:
+        pass
     finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        try:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        except Exception:
+            pass
 
 
 SOURCE_GROUPS = {
@@ -424,11 +437,16 @@ def main():
 
     state = State()
 
-    # Initial fetch in background
-    threading.Thread(
-        target=lambda: asyncio.run(run_fetch()),
-        daemon=True,
-    ).start()
+    # Initial fetch in background (redirect stdout to avoid corrupting TUI)
+    def _quiet_fetch():
+        old_stdout = sys.stdout
+        sys.stdout = open(os.devnull, 'w')
+        try:
+            asyncio.run(run_fetch())
+        finally:
+            sys.stdout.close()
+            sys.stdout = old_stdout
+    threading.Thread(target=_quiet_fetch, daemon=True).start()
 
     # Start keyboard listener
     threading.Thread(target=kb_listener, args=(state,), daemon=True).start()
@@ -452,7 +470,7 @@ def main():
             if (now - last_fetch) > 300 and not state.fetching:
                 state.fetching = True
                 def _bg():
-                    asyncio.run(run_fetch())
+                    _quiet_fetch()
                     state.fetching = False
                 threading.Thread(target=_bg, daemon=True).start()
                 last_fetch = now
@@ -463,7 +481,7 @@ def main():
                 if not state.fetching:
                     state.fetching = True
                     def _fr():
-                        asyncio.run(run_fetch())
+                        _quiet_fetch()
                         state.fetching = False
                     threading.Thread(target=_fr, daemon=True).start()
                     last_fetch = now
@@ -486,8 +504,9 @@ def main():
                 claude_active, console.width or 80,
             )
 
-            # Clear and redraw
-            console.clear()
+            # Move cursor to top-left and clear screen, then redraw
+            sys.stdout.write("\033[H\033[2J")
+            sys.stdout.flush()
             console.print(display)
 
             time.sleep(1)
