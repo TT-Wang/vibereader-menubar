@@ -89,26 +89,23 @@ class Article:
 
 
 async def fetch_hn(limit=20):
-    """Fetch top stories from Hacker News API. Falls back to HNRSS if aiohttp missing."""
-    if not _AIOHTTP:
-        # Fallback: use HNRSS feed via feedparser (no aiohttp needed)
-        return await fetch_rss('https://hnrss.org/newest?points=50', limit=limit)
-    articles = []
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(HN_TOP_URL, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                ids = await resp.json()
-
-            tasks = []
-            for item_id in ids[:limit]:
-                tasks.append(_fetch_hn_item(session, item_id))
-            results = await asyncio.gather(*tasks)
-            for a in results:
-                if a:
-                    articles.append(a)
-    except Exception as e:
-        print(f"[vibe] HN fetch failed: {e}", file=sys.stderr)
-    return articles
+    """Fetch top stories from Hacker News. Falls back to HNRSS on any failure."""
+    # Try HN API via aiohttp first
+    if _AIOHTTP:
+        try:
+            articles = []
+            async with aiohttp.ClientSession() as session:
+                async with session.get(HN_TOP_URL, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                    ids = await resp.json()
+                tasks = [_fetch_hn_item(session, i) for i in ids[:limit]]
+                results = await asyncio.gather(*tasks)
+                articles = [a for a in results if a]
+            if articles:
+                return articles
+        except Exception as e:
+            print(f"[vibe] HN API failed ({e}), falling back to HNRSS", file=sys.stderr)
+    # Fallback: HNRSS feed via feedparser (works without aiohttp)
+    return await fetch_rss('https://hnrss.org/newest?points=50', limit=limit)
 
 
 async def _fetch_hn_item(session, item_id):
@@ -146,10 +143,15 @@ async def fetch_rss(url, limit=10):
             except Exception:
                 raw = None
         if raw is None:
-            loop = asyncio.get_event_loop()
+            # Sync fallback — feedparser can fetch URLs directly
+            loop = asyncio.get_running_loop()
             feed = await loop.run_in_executor(None, feedparser.parse, url)
         else:
             feed = feedparser.parse(raw)
+
+        if feed.get('bozo') and not feed.get('entries'):
+            print(f"[vibe] RSS parse failed ({url[:40]}): {feed.get('bozo_exception', 'unknown')}", file=sys.stderr)
+            return []
 
         now = datetime.now(timezone.utc).isoformat()
         for entry in feed.get('entries', [])[:limit]:
