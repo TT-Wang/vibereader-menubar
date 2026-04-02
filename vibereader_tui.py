@@ -266,18 +266,18 @@ def build_display(articles, state, total, fetched_at, claude_active, term_width)
 
 
 def kb_listener(state):
-    """Listen for keyboard input in raw mode."""
+    """Listen for keyboard input using cbreak mode (compatible with rich Live)."""
     import tty
     import termios
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
     try:
-        tty.setraw(fd)
+        tty.setcbreak(fd)  # cbreak instead of raw — lets rich handle escape sequences
         while not state.quit:
-            if select.select([sys.stdin], [], [], 0.1)[0]:
+            if select.select([sys.stdin], [], [], 0.2)[0]:
                 ch = sys.stdin.read(1)
                 with state.lock:
-                    if ch == 'q':
+                    if ch in ('q', '\x03'):  # q or Ctrl+C
                         state.quit = True
                     elif ch == 'n':
                         state.page_offset += PAGE_SIZE
@@ -425,27 +425,21 @@ def main():
     state = State()
 
     # Initial fetch in background
-    def _initial_fetch():
-        try:
-            asyncio.run(run_fetch())
-        except Exception as e:
-            pass  # silently ignore errors during initial fetch
-
-    threading.Thread(target=_initial_fetch, daemon=True).start()
+    threading.Thread(
+        target=lambda: asyncio.run(run_fetch()),
+        daemon=True,
+    ).start()
 
     # Start keyboard listener
-    kb = threading.Thread(target=kb_listener, args=(state,), daemon=True)
-    kb.start()
+    threading.Thread(target=kb_listener, args=(state,), daemon=True).start()
 
     console = Console()
     last_fetch = time.time()
     last_auto_push = time.time()
 
-    with Live(console=console, refresh_per_second=2, screen=True) as live:
+    try:
         while not state.quit:
             now = time.time()
-
-            # Check Claude activity
             claude_active = is_claude_active()
 
             # Auto-push when Claude is working (every 20s)
@@ -455,37 +449,26 @@ def main():
                 last_auto_push = now
 
             # Auto-fetch every 5 min
-            if (now - last_fetch) > 300:
-                if not state.fetching:
-                    state.fetching = True
-
-                    def _bg_fetch():
-                        try:
-                            asyncio.run(run_fetch())
-                        except Exception:
-                            pass
-                        state.fetching = False
-
-                    threading.Thread(target=_bg_fetch, daemon=True).start()
-                    last_fetch = now
+            if (now - last_fetch) > 300 and not state.fetching:
+                state.fetching = True
+                def _bg():
+                    asyncio.run(run_fetch())
+                    state.fetching = False
+                threading.Thread(target=_bg, daemon=True).start()
+                last_fetch = now
 
             # Force refresh
             if state.force_refresh:
                 state.force_refresh = False
                 if not state.fetching:
                     state.fetching = True
-
-                    def _force_fetch():
-                        try:
-                            asyncio.run(run_fetch())
-                        except Exception:
-                            pass
+                    def _fr():
+                        asyncio.run(run_fetch())
                         state.fetching = False
-
-                    threading.Thread(target=_force_fetch, daemon=True).start()
+                    threading.Thread(target=_fr, daemon=True).start()
                     last_fetch = now
 
-            # Load and filter articles
+            # Load and render
             data = load_articles()
             prefs = load_prefs()
             all_articles = filter_articles(data.get("articles", []), prefs)
@@ -493,24 +476,23 @@ def main():
 
             with state.lock:
                 if total > 0:
-                    state.page_offset = state.page_offset % total
-                    # Ensure non-negative after modulo (handles negative values)
                     state.page_offset = (state.page_offset % total + total) % total
                 offset = state.page_offset
 
             page = all_articles[offset:offset + PAGE_SIZE]
 
             display = build_display(
-                page,
-                state,
-                total,
-                data.get("fetched_at"),
-                claude_active,
-                console.width or 80,
+                page, state, total, data.get("fetched_at"),
+                claude_active, console.width or 80,
             )
-            live.update(display)
 
-            time.sleep(0.5)
+            # Clear and redraw
+            console.clear()
+            console.print(display)
+
+            time.sleep(1)
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == "__main__":
