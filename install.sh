@@ -14,7 +14,6 @@ mkdir -p "$DIR" "$BIN_DIR"
 # Download
 echo "  Downloading..."
 curl -sL "$BASE/fetch.py" -o "$DIR/fetch.py"
-curl -sL "$BASE/vibereader_web.py" -o "$DIR/vibereader_web.py"
 curl -sL "$BASE/vibereader_menubar.py" -o "$DIR/vibereader_menubar.py"
 
 # Install Python deps
@@ -23,20 +22,19 @@ if ! python3 -c "import feedparser, rumps" 2>/dev/null; then
   python3 -m pip install feedparser aiohttp rumps 2>/dev/null \
     || python3 -m pip install --user feedparser aiohttp rumps 2>/dev/null \
     || python3 -m pip install --break-system-packages feedparser aiohttp rumps 2>/dev/null \
-    || echo "  ⚠️  pip failed. Run: python3 -m pip install --user feedparser aiohttp rumps"
+    || { echo "  ⚠️  Run manually: python3 -m pip install --user feedparser aiohttp rumps"; exit 1; }
 fi
 
 if ! python3 -c "import feedparser, rumps" 2>/dev/null; then
   echo "  ⚠️  Missing deps. Run: python3 -m pip install --user feedparser aiohttp rumps"
   exit 1
 fi
-echo "  ✓ Dependencies OK"
+echo "  ✓ OK"
 
-# Create launcher — starts backend + menu bar
+# Create launcher
 cat > "$BIN_DIR/vibereader" <<'LAUNCHER'
 #!/usr/bin/env bash
 pkill -f "vibereader_menubar.py" 2>/dev/null || true
-pkill -f "vibereader_web.py" 2>/dev/null || true
 cd "$HOME/.vibereader-app"
 exec python3 vibereader_menubar.py
 LAUNCHER
@@ -59,5 +57,5 @@ echo ""
 echo "🐷 Done! Run:"
 echo "   vibereader"
 echo ""
-echo "   A 🐷 icon appears in your menu bar. Click it to browse news."
-echo "   If not found, run: source ~/.zshrc"
+echo "   A 🐷 appears in your menu bar. Click it to read."
+echo "   If not found: source ~/.zshrc"

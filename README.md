@@ -1,6 +1,6 @@
 # Vibereader
 
-Curated tech news in your macOS menu bar. One command.
+Curated tech news in your macOS menu bar. 🐷
 
 ## Install
 
@@ -14,33 +14,29 @@ curl -sL https://raw.githubusercontent.com/TT-Wang/vibereader-menubar/main/insta
 vibereader
 ```
 
-A 🐷 icon appears in your menu bar. Click it to browse headlines. That's it.
+A 🐷 appears in your menu bar. Click it → headlines. Click a headline → opens in browser. That's it.
 
-## What You Get
+## Features
 
-- 🐷 pig icon in your menu bar — click to see headlines
-- 15 sources (HN, TechCrunch, Wired, Ars Technica, CoinDesk, Quanta, and more)
+- 🐷 native macOS menu bar icon
+- 15 news sources (HN, TechCrunch, Wired, Ars Technica, CoinDesk, Quanta, and more)
 - Articles scored by popularity + recency
-- Category icons (🤖 AI, 🌐 web, ⚙️ systems, 🔒 security, 🔬 science, etc.)
-- Click any headline to open in browser
+- Category icons (🤖 AI, 🌐 web, ⚙️ systems, 🔒 security, 🔬 science)
 - Auto-refreshes every 5 minutes
-- Web dashboard also available at http://localhost:8888
+- Runs locally — no server, no account, no signup
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---|---|
-| `vibereader: command not found` | `source ~/.zshrc` or restart terminal |
-| No articles in menu | Wait a few seconds, click 🔄 Refresh |
-| `pip install failed` | `python3 -m pip install --user feedparser aiohttp rumps` |
+| `command not found` | `source ~/.zshrc` or restart terminal |
+| No articles | Wait a few seconds, click 🔄 Refresh |
+| pip failed | `python3 -m pip install --user feedparser aiohttp rumps` |
 
-## Also: Claude Code Plugin
+## Requirements
 
-Get articles pushed in your terminal while Claude works:
-
-```bash
-claude plugin add github:TT-Wang/vibereader
-```
+- macOS
+- Python 3.9+
 
 ## License
 

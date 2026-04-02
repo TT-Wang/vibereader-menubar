@@ -1,0 +1,113 @@
+{
+  "objective": "Refactor the vibereader-menubar macOS menu bar app from a single 488-line main.swift into a clean multi-file architecture with modern Swift patterns",
+  "created": "2026-04-01T18:00:00.000Z",
+  "techStack": {
+    "language": "swift",
+    "testCommand": "grep -rn 'func ' /root/vibereader-menubar/Sources/VibereaderMenuBar/ | wc -l",
+    "buildCommand": "swift build --package-path /root/vibereader-menubar 2>&1 | tail -10",
+    "lintCommand": "grep -rn 'TODO\\|FIXME\\|HACK\\|fputs' /root/vibereader-menubar/Sources/VibereaderMenuBar/ || true"
+  },
+  "modules": [
+    {
+      "id": "m1",
+      "title": "Foundation: main.swift, Config.swift, Models/",
+      "objective": "Create the foundation layer: three new files, delete content from the original main.swift down to ~10 lines. (1) Rewrite /root/vibereader-menubar/Sources/VibereaderMenuBar/main.swift to contain only: `import AppKit`, `let app = NSApplication.shared`, `app.setActivationPolicy(.accessory)`, `let delegate = AppDelegate()`, `app.delegate = delegate`, `app.run()` — no activate(ignoringOtherApps:) call. (2) Create /root/vibereader-menubar/Sources/VibereaderMenuBar/Config.swift containing `import Foundation` and `enum Config { static var apiURL: String { ProcessInfo.processInfo.environment[\"VIBEREADER_API\"] ?? \"http://localhost:8888\" } }` — note the default changes from the hardcoded VPS IP to localhost. (3) Create /root/vibereader-menubar/Sources/VibereaderMenuBar/Models/Article.swift containing `import Foundation` and the `Article: Decodable` struct (fields: id, title, url, source, score: Double, categories: [String]) and `FeedResponse: Decodable` struct (fields: articles: [Article], fetchedAt: String with CodingKey fetched_at). (4) Create /root/vibereader-menubar/Sources/VibereaderMenuBar/Models/ClaudeStatus.swift containing `import Foundation` and the `ClaudeStatus: Decodable` struct (fields: claudeActive: Bool, idleSeconds: Int, toolCallCount: Int with CodingKeys claude_active, idle_seconds, tool_call_count). (5) Update /root/vibereader-menubar/Package.swift: remove the `exclude: [\"Info.plist\"]` argument from the executableTarget so Info.plist is no longer listed (it will simply sit uncompiled in the directory). No other Package.swift changes.",
+      "dependsOn": [],
+      "agent": "worker",
+      "files": [
+        "/root/vibereader-menubar/Sources/VibereaderMenuBar/main.swift",
+        "/root/vibereader-menubar/Sources/VibereaderMenuBar/Config.swift",
+        "/root/vibereader-menubar/Sources/VibereaderMenuBar/Models/Article.swift",
+        "/root/vibereader-menubar/Sources/VibereaderMenuBar/Models/ClaudeStatus.swift",
+        "/root/vibereader-menubar/Package.swift"
+      ],
+      "verify": [
+        "grep -c 'app.run()' /root/vibereader-menubar/Sources/VibereaderMenuBar/main.swift | grep -qx '1' && echo PASS || echo FAIL",
+        "grep 'activate(ignoringOtherApps' /root/vibereader-menubar/Sources/VibereaderMenuBar/main.swift && echo 'FAIL: activate still present' || echo 'PASS: activate removed'",
+        "grep -c 'class\\|struct\\|func\\|import UserNotifications' /root/vibereader-menubar/Sources/VibereaderMenuBar/main.swift | awk '{if ($1 <= 3) print \"PASS: main.swift is thin\"; else print \"FAIL: main.swift too large, got \" $1 \" declarations\"}'",
+        "grep -c 'localhost:8888' /root/vibereader-menubar/Sources/VibereaderMenuBar/Config.swift | grep -qx '1' && echo 'PASS: Config default is localhost' || echo 'FAIL: Config missing localhost default'",
+        "grep -c 'struct Article' /root/vibereader-menubar/Sources/VibereaderMenuBar/Models/Article.swift | grep -qx '1' && echo 'PASS: Article struct present' || echo 'FAIL'",
+        "grep -c 'struct FeedResponse' /root/vibereader-menubar/Sources/VibereaderMenuBar/Models/Article.swift | grep -qx '1' && echo 'PASS: FeedResponse struct present' || echo 'FAIL'",
+        "grep -c 'struct ClaudeStatus' /root/vibereader-menubar/Sources/VibereaderMenuBar/Models/ClaudeStatus.swift | grep -qx '1' && echo 'PASS: ClaudeStatus struct present' || echo 'FAIL'",
+        "grep 'exclude.*Info.plist' /root/vibereader-menubar/Package.swift && echo 'FAIL: exclude still present' || echo 'PASS: Info.plist exclusion removed'"
+      ],
+      "doneWhen": "main.swift is ~10 lines with no class/struct/func declarations and no activate(ignoringOtherApps:). Config.swift exists with localhost default. Models/Article.swift has Article+FeedResponse. Models/ClaudeStatus.swift has ClaudeStatus. Package.swift has no Info.plist exclusion. All 8 verify commands pass.",
+      "complexity": "simple"
+    },
+    {
+      "id": "m2",
+      "title": "Services: ArticleService, StatusService, NotificationManager",
+      "objective": "Create three service files that encapsulate all networking and side effects. All methods use async/await — no DispatchQueue, no callbacks, no [weak self]. Use os.Logger for logging instead of fputs. (1) Create /root/vibereader-menubar/Sources/VibereaderMenuBar/Services/ArticleService.swift: `import Foundation`, `import os.log`, actor or final class `ArticleService` with `func fetchArticles() async throws -> FeedResponse` (GET Config.apiURL+\"/api/articles\", decode FeedResponse), `func refreshFeed() async throws` (POST Config.apiURL+\"/refresh\" with Content-Type application/json header, log HTTP status code via os.Logger), `func pollForUpdate(oldFetchedAt: Date?) async throws -> FeedResponse` (loop up to 8 attempts with 2s Task.sleep between each, GET articles, return FeedResponse when fetchedAt changes, throw on timeout). (2) Create /root/vibereader-menubar/Sources/VibereaderMenuBar/Services/StatusService.swift: `import Foundation`, `import os.log`, actor or final class `StatusService` with `func fetchStatus() async throws -> ClaudeStatus` (GET Config.apiURL+\"/api/status\", decode ClaudeStatus). (3) Create /root/vibereader-menubar/Sources/VibereaderMenuBar/Services/NotificationManager.swift: `import Foundation`, `import os.log`, `import AppKit`, final class or struct `NotificationManager` with `private(set) var lastNotificationTime: Date = .distantPast`, `private(set) var notifiedArticleIds: Set<String> = []`, `func notify(articles: [Article])` which: skips if fewer than 5 minutes since lastNotificationTime (cooldown fix — current code has a bug where the cooldown check is OR'd with justBecameActive so it can fire every 10s), filters out already-notified article IDs, takes up to 3, builds a numbered list of titles (truncate at 55 chars with ...), runs `osascript -e 'display notification \"<body>\" with title \"While Claude works...\"'` via Process/shell (NOT UNUserNotifications — SPM binary has no bundle ID), updates lastNotificationTime and notifiedArticleIds. The osascript command must NOT use emoji in the title (osascript escaping issues). All three services consume only types from Models/ — they do not import AppKit except NotificationManager which needs it for Process.",
+      "dependsOn": ["m1"],
+      "agent": "worker",
+      "files": [
+        "/root/vibereader-menubar/Sources/VibereaderMenuBar/Services/ArticleService.swift",
+        "/root/vibereader-menubar/Sources/VibereaderMenuBar/Services/StatusService.swift",
+        "/root/vibereader-menubar/Sources/VibereaderMenuBar/Services/NotificationManager.swift"
+      ],
+      "verify": [
+        "grep -c 'func fetchArticles' /root/vibereader-menubar/Sources/VibereaderMenuBar/Services/ArticleService.swift | grep -qx '1' && echo 'PASS: fetchArticles present' || echo 'FAIL'",
+        "grep -c 'func pollForUpdate' /root/vibereader-menubar/Sources/VibereaderMenuBar/Services/ArticleService.swift | grep -qx '1' && echo 'PASS: pollForUpdate present' || echo 'FAIL'",
+        "grep -c 'func refreshFeed' /root/vibereader-menubar/Sources/VibereaderMenuBar/Services/ArticleService.swift | grep -qx '1' && echo 'PASS: refreshFeed present' || echo 'FAIL'",
+        "grep 'DispatchQueue' /root/vibereader-menubar/Sources/VibereaderMenuBar/Services/ArticleService.swift && echo 'FAIL: DispatchQueue still in ArticleService' || echo 'PASS: no DispatchQueue'",
+        "grep 'DispatchQueue' /root/vibereader-menubar/Sources/VibereaderMenuBar/Services/StatusService.swift && echo 'FAIL: DispatchQueue still in StatusService' || echo 'PASS: no DispatchQueue'",
+        "grep -c 'func fetchStatus' /root/vibereader-menubar/Sources/VibereaderMenuBar/Services/StatusService.swift | grep -qx '1' && echo 'PASS: fetchStatus present' || echo 'FAIL'",
+        "grep -c 'osascript' /root/vibereader-menubar/Sources/VibereaderMenuBar/Services/NotificationManager.swift | grep -v '^0$' && echo 'PASS: osascript used' || echo 'FAIL: osascript missing'",
+        "grep 'UNUserNotification\\|UNMutableNotification\\|UNNotificationRequest' /root/vibereader-menubar/Sources/VibereaderMenuBar/Services/NotificationManager.swift && echo 'FAIL: UNUserNotifications still present' || echo 'PASS: UNUserNotifications removed'",
+        "grep -c 'lastNotificationTime\\|notifiedArticleIds' /root/vibereader-menubar/Sources/VibereaderMenuBar/Services/NotificationManager.swift | grep -v '^0$' && echo 'PASS: cooldown state in NotificationManager' || echo 'FAIL'",
+        "grep -rn 'import.*Article\\|import.*ClaudeStatus' /root/vibereader-menubar/Sources/VibereaderMenuBar/Services/ || echo 'PASS: services use module-level types (no cross-file imports needed in Swift)'"
+      ],
+      "doneWhen": "ArticleService.swift has fetchArticles/refreshFeed/pollForUpdate as async throws funcs with no DispatchQueue. StatusService.swift has fetchStatus as async throws. NotificationManager.swift uses osascript (not UNUserNotifications) and owns lastNotificationTime+notifiedArticleIds. All 10 verify commands pass.",
+      "complexity": "medium"
+    },
+    {
+      "id": "m3",
+      "title": "ViewModel: AppState.swift",
+      "objective": "Create /root/vibereader-menubar/Sources/VibereaderMenuBar/ViewModels/AppState.swift as a thin @MainActor coordinator. It must: (1) be declared `@MainActor final class AppState: ObservableObject`, (2) hold `@Published var articles: [Article] = []`, `@Published var lastFetched: Date? = nil`, `@Published var isRefreshing: Bool = false`, `@Published var searchText: String = \"\"`, `@Published var claudeActive: Bool = false`, `@Published var claudeIdleSeconds: Int = -1` — note: wasClaudeActive moves OUT of AppState into this file as a plain `private var wasClaudeActive: Bool = false` (it is coordination state, not published UI state), (3) hold `let articleService = ArticleService()`, `let statusService = StatusService()`, `let notificationManager = NotificationManager()` as stored properties, (4) implement `var filteredArticles: [Article]` computed property: sort by score descending, take prefix(15), filter by searchText if non-empty (case-insensitive match on title, source, or any category), (5) implement `func fetchArticles() async` — calls `articleService.fetchArticles()`, on success sets articles+lastFetched with withAnimation, catches and logs errors via os.Logger, (6) implement `func fetchStatus() async` — calls `statusService.fetchStatus()`, detects justBecameActive (claudeActive was false, new value is true), updates claudeActive+claudeIdleSeconds+wasClaudeActive, then calls `notificationManager.notify(articles: filteredArticles)` only when justBecameActive is true (remove the broken OR condition that also fires during ongoing active sessions every 10s), (7) implement `func refreshFeed() async` — sets isRefreshing=true, calls articleService.refreshFeed() then articleService.pollForUpdate(oldFetchedAt: lastFetched), on success sets articles+lastFetched with withAnimation, always sets isRefreshing=false in a defer or finally block. All async funcs must be called with Task { await appState.X() } from callers — AppState itself does NOT create any timers.",
+      "dependsOn": ["m1", "m2"],
+      "agent": "worker",
+      "files": [
+        "/root/vibereader-menubar/Sources/VibereaderMenuBar/ViewModels/AppState.swift"
+      ],
+      "verify": [
+        "grep -c '@MainActor' /root/vibereader-menubar/Sources/VibereaderMenuBar/ViewModels/AppState.swift | grep -qx '1' && echo 'PASS: @MainActor present' || echo 'FAIL'",
+        "grep -c 'ObservableObject' /root/vibereader-menubar/Sources/VibereaderMenuBar/ViewModels/AppState.swift | grep -qx '1' && echo 'PASS: ObservableObject present' || echo 'FAIL'",
+        "grep -c 'ArticleService\\|StatusService\\|NotificationManager' /root/vibereader-menubar/Sources/VibereaderMenuBar/ViewModels/AppState.swift | grep -v '^0$' && echo 'PASS: services referenced' || echo 'FAIL: services not wired'",
+        "grep 'DispatchQueue' /root/vibereader-menubar/Sources/VibereaderMenuBar/ViewModels/AppState.swift && echo 'FAIL: DispatchQueue still present' || echo 'PASS: no DispatchQueue'",
+        "grep 'Timer\\|refreshTimer\\|statusTimer' /root/vibereader-menubar/Sources/VibereaderMenuBar/ViewModels/AppState.swift && echo 'FAIL: timers in AppState (should be in AppDelegate)' || echo 'PASS: no timers in AppState'",
+        "grep -c 'func fetchArticles\\|func fetchStatus\\|func refreshFeed' /root/vibereader-menubar/Sources/VibereaderMenuBar/ViewModels/AppState.swift | grep -qx '3' && echo 'PASS: all 3 async funcs present' || echo 'FAIL: missing async funcs'",
+        "grep -c 'filteredArticles' /root/vibereader-menubar/Sources/VibereaderMenuBar/ViewModels/AppState.swift | grep -v '^0$' && echo 'PASS: filteredArticles computed property present' || echo 'FAIL'",
+        "grep -c 'wasClaudeActive' /root/vibereader-menubar/Sources/VibereaderMenuBar/ViewModels/AppState.swift | grep -v '^0$' && echo 'PASS: wasClaudeActive tracking present' || echo 'FAIL'",
+        "grep -rn 'ArticleService\\|StatusService\\|NotificationManager' /root/vibereader-menubar/Sources/VibereaderMenuBar/ViewModels/AppState.swift | grep -v '^0$' && echo 'PASS: integration — AppState wires all three services' || echo 'FAIL: AppState does not reference services'"
+      ],
+      "doneWhen": "@MainActor ObservableObject AppState holds 6 @Published properties plus private wasClaudeActive, instantiates all three services, delegates all networking to services, has filteredArticles computed property, has no DispatchQueue or Timer references. All 9 verify commands pass.",
+      "complexity": "medium"
+    },
+    {
+      "id": "m4",
+      "title": "Views + AppDelegate",
+      "objective": "Create two view files and rewrite AppDelegate, removing all UNUserNotifications and app.activate. (1) Create /root/vibereader-menubar/Sources/VibereaderMenuBar/Views/PopoverContentView.swift: `import SwiftUI`, `import AppKit`, struct `PopoverContentView: View` accepting `@ObservedObject var state: AppState`. Body is identical to the current main.swift implementation: VStack with header HStack (bold 'Vibereader' Text, 8pt Circle fill green/gray based on state.claudeActive, Spacer, timeAgoText caption, refresh Button with ProgressView/arrow.clockwise toggle), Divider, TextField bound to $state.searchText, Divider, ScrollView with LazyVStack of ForEach(state.filteredArticles) rendering ArticleRowView + Divider, Divider, Quit button. Include the `var timeAgoText: String` computed property (returns 'never', 'just now', 'Xm ago', 'Xh ago'). Frame: width=380, height=500. (2) Create /root/vibereader-menubar/Sources/VibereaderMenuBar/Views/ArticleRowView.swift: `import SwiftUI`, `import AppKit`, struct `ArticleRowView: View` accepting `let article: Article` and `@State private var isHovered = false`. Body is identical to current main.swift: Button with plain style opening article.url via NSWorkspace.shared.open(), label is VStack with title Text (semibold 13pt, lineLimit 2), HStack with score badge (RoundedRectangle colored by scoreColor), ForEach category pills (purple tinted, prefix 3), Spacer, source Text (10pt secondary). Background highlights on isHovered. Include `var scoreColor: Color` computed property (green if >2.0, yellow if >1.0, gray otherwise). (3) Rewrite /root/vibereader-menubar/Sources/VibereaderMenuBar/AppDelegate.swift: `import AppKit`, `import SwiftUI`, `import os.log`, class `AppDelegate: NSObject, NSApplicationDelegate` — remove NSPopoverDelegate and UNUserNotificationCenterDelegate conformances entirely. Properties: `var statusItem: NSStatusItem!`, `var popover: NSPopover!`, `var appState = AppState()`, `var refreshTimer: Timer?`, `var statusTimer: Timer?`. In `applicationDidFinishLaunching`: create statusItem with button title 'V' and action togglePopover, create NSPopover (contentSize 380x500, behavior .transient, contentViewController NSHostingController(rootView: PopoverContentView(state: appState))), do NOT set popover.delegate, do NOT call UNUserNotificationCenter, do NOT call requestAuthorization, call `Task { await appState.fetchArticles() }` and `Task { await appState.fetchStatus() }`, create refreshTimer (60s interval, calls timerFired) and statusTimer (10s interval, calls statusTimerFired) added to RunLoop.main with .common mode. In `togglePopover`: same as current (show/close popover, makeKey after show). In `timerFired`: `Task { await appState.fetchArticles() }`. In `statusTimerFired`: `Task { await appState.fetchStatus() }` then `updateIcon()`. In `updateIcon`: same as current (set contentTintColor to systemGreen when claudeActive, nil otherwise). Remove the two UNUserNotificationCenter delegate methods (`willPresent` and `didReceive`) entirely.",
+      "dependsOn": ["m1", "m3"],
+      "agent": "worker",
+      "files": [
+        "/root/vibereader-menubar/Sources/VibereaderMenuBar/Views/PopoverContentView.swift",
+        "/root/vibereader-menubar/Sources/VibereaderMenuBar/Views/ArticleRowView.swift",
+        "/root/vibereader-menubar/Sources/VibereaderMenuBar/AppDelegate.swift"
+      ],
+      "verify": [
+        "grep -c 'struct PopoverContentView' /root/vibereader-menubar/Sources/VibereaderMenuBar/Views/PopoverContentView.swift | grep -qx '1' && echo 'PASS' || echo 'FAIL: PopoverContentView missing'",
+        "grep -c 'struct ArticleRowView' /root/vibereader-menubar/Sources/VibereaderMenuBar/Views/ArticleRowView.swift | grep -qx '1' && echo 'PASS' || echo 'FAIL: ArticleRowView missing'",
+        "grep -c 'class AppDelegate' /root/vibereader-menubar/Sources/VibereaderMenuBar/AppDelegate.swift | grep -qx '1' && echo 'PASS' || echo 'FAIL: AppDelegate missing'",
+        "grep 'NSPopoverDelegate\\|UNUserNotificationCenterDelegate' /root/vibereader-menubar/Sources/VibereaderMenuBar/AppDelegate.swift && echo 'FAIL: removed conformances still present' || echo 'PASS: conformances removed'",
+        "grep 'UNUserNotificationCenter\\|requestAuthorization\\|UNMutableNotification' /root/vibereader-menubar/Sources/VibereaderMenuBar/AppDelegate.swift && echo 'FAIL: UNUserNotifications still in AppDelegate' || echo 'PASS: UNUserNotifications removed from AppDelegate'",
+        "grep -c 'refreshTimer\\|statusTimer' /root/vibereader-menubar/Sources/VibereaderMenuBar/AppDelegate.swift | grep -v '^0$' && echo 'PASS: timers in AppDelegate' || echo 'FAIL'",
+        "grep -c 'Task.*fetchArticles\\|Task.*fetchStatus' /root/vibereader-menubar/Sources/VibereaderMenuBar/AppDelegate.swift | grep -v '^0$' && echo 'PASS: Task wrappers present for async calls' || echo 'FAIL'",
+        "grep -rn 'class AppState\\|ObservableObject' /root/vibereader-menubar/Sources/VibereaderMenuBar/ViewModels/AppState.swift | grep -v '^0$' && grep -c 'AppState' /root/vibereader-menubar/Sources/VibereaderMenuBar/AppDelegate.swift | grep -v '^0$' && echo 'PASS: integration — AppDelegate references AppState from ViewModels/' || echo 'FAIL'",
+        "grep -rn 'UNUserNotification\\|import UserNotifications' /root/vibereader-menubar/Sources/VibereaderMenuBar/ | grep -v 'Binary file' && echo 'FAIL: UserNotifications still imported somewhere' || echo 'PASS: UserNotifications fully removed from codebase'",
+        "ls /root/vibereader-menubar/Sources/VibereaderMenuBar/Views/PopoverContentView.swift /root/vibereader-menubar/Sources/VibereaderMenuBar/Views/ArticleRowView.swift /root/vibereader-menubar/Sources/VibereaderMenuBar/AppDelegate.swift && echo 'PASS: all 3 files exist' || echo 'FAIL: missing files'"
+      ],
+      "doneWhen": "PopoverContentView.swift and ArticleRowView.swift exist as standalone SwiftUI view files. AppDelegate.swift has no NSPopoverDelegate/UNUserNotificationCenterDelegate, no UNUserNotificationCenter calls, no requestAuthorization, uses Task{} wrappers for all async AppState calls. No file in Sources/ imports UserNotifications. All 10 verify commands pass.",
+      "complexity": "medium"
+    }
+  ]
+}

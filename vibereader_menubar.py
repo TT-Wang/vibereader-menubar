@@ -5,7 +5,6 @@ import os
 import sys
 import asyncio
 import threading
-import time
 import webbrowser
 
 # Ensure we can import fetch.py from the same directory
@@ -78,15 +77,11 @@ class VibereaderApp(rumps.App):
     def __init__(self):
         super().__init__("🐷", quit_button=None)
         self.menu = ["Loading..."]
-        # Initial fetch
         do_fetch()
-        # Refresh menu every 30 seconds
         self.timer = rumps.Timer(self.refresh_menu, 30)
         self.timer.start()
-        # Fetch new articles every 5 minutes
         self.fetch_timer = rumps.Timer(self.auto_fetch, 300)
         self.fetch_timer.start()
-        # Build menu after a short delay for first fetch
         threading.Timer(3, self.refresh_menu, args=[None]).start()
 
     def refresh_menu(self, _):
@@ -122,7 +117,6 @@ class VibereaderApp(rumps.App):
 
         self.menu.add(rumps.separator)
         self.menu.add(rumps.MenuItem("🔄 Refresh", callback=lambda _: do_fetch()))
-        self.menu.add(rumps.MenuItem("🌐 Open Dashboard", callback=lambda _: webbrowser.open("http://localhost:8888")))
         self.menu.add(rumps.separator)
         self.menu.add(rumps.MenuItem("Quit", callback=lambda _: rumps.quit_application()))
 
@@ -130,24 +124,5 @@ class VibereaderApp(rumps.App):
         do_fetch()
 
 
-def start_backend():
-    """Start the web backend in background."""
-    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vibereader_web.py")
-    if os.path.exists(script):
-        import subprocess
-        proc = subprocess.Popen(
-            [sys.executable, script],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        return proc
-    return None
-
-
 if __name__ == "__main__":
-    backend = start_backend()
-    try:
-        VibereaderApp().run()
-    finally:
-        if backend:
-            backend.terminate()
+    VibereaderApp().run()
