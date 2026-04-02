@@ -10,12 +10,12 @@ Native macOS menu bar app for curated tech news. Standalone — works with or wi
 curl -sL https://raw.githubusercontent.com/TT-Wang/vibereader-menubar/main/install.sh | bash
 ```
 
-Then run:
+Then:
 ```bash
-~/vibereader-menubar/.build/debug/VibereaderMenuBar
+vibereader
 ```
 
-That's it. The script clones, installs deps, builds, and puts the binary in your PATH. The app auto-starts its Python backend — no separate server to run.
+That's it. Opens a dashboard at `http://localhost:8888` with your curated feed. No git, no Swift, no build step.
 
 ## Features
 

@@ -1,38 +1,43 @@
 #!/usr/bin/env bash
-# One-liner install for Vibereader Menu Bar
-# Usage: curl -sL https://raw.githubusercontent.com/TT-Wang/vibereader-menubar/main/install.sh | bash
+# Vibereader — one-liner install
+# curl -sL https://raw.githubusercontent.com/TT-Wang/vibereader-menubar/main/install.sh | bash
 set -e
 
-INSTALL_DIR="$HOME/vibereader-menubar"
-BIN_DIR="/usr/local/bin"
+DIR="$HOME/.vibereader-app"
+BASE="https://raw.githubusercontent.com/TT-Wang/vibereader-menubar/main"
 
-echo "🐷 Installing Vibereader Menu Bar..."
+echo "🐷 Installing Vibereader..."
 
-# Clone or update
-if [ -d "$INSTALL_DIR" ]; then
-  echo "  Updating existing install..."
-  cd "$INSTALL_DIR" && git pull -q
-else
-  echo "  Cloning repo..."
-  git clone -q https://github.com/TT-Wang/vibereader-menubar.git "$INSTALL_DIR"
-  cd "$INSTALL_DIR"
-fi
+mkdir -p "$DIR"
 
-# Python deps
-echo "  Installing Python dependencies..."
+# Download the two Python files
+echo "  Downloading..."
+curl -sL "$BASE/fetch.py" -o "$DIR/fetch.py"
+curl -sL "$BASE/vibereader_web.py" -o "$DIR/vibereader_web.py"
+
+# Install Python deps
+echo "  Installing dependencies..."
 pip3 install -q vibereader feedparser aiohttp 2>/dev/null
 
-# Build
-echo "  Building (swift build)..."
-swift build -q 2>/dev/null
+# Create launcher script
+cat > "$DIR/vibereader" <<'LAUNCHER'
+#!/usr/bin/env bash
+cd "$HOME/.vibereader-app"
+python3 vibereader_web.py &
+PID=$!
+sleep 1
+open "http://localhost:8888" 2>/dev/null || echo "Open http://localhost:8888 in your browser"
+echo "🐷 Vibereader running (pid $PID). Press Ctrl+C to stop."
+trap "kill $PID 2>/dev/null" EXIT
+wait $PID
+LAUNCHER
+chmod +x "$DIR/vibereader"
 
-# Install binary
-echo "  Installing to $BIN_DIR..."
-sudo mkdir -p "$BIN_DIR"
-sudo cp .build/debug/VibereaderMenuBar "$BIN_DIR/"
+# Symlink to PATH
+ln -sf "$DIR/vibereader" /usr/local/bin/vibereader 2>/dev/null || {
+  echo "  Run: sudo ln -sf $DIR/vibereader /usr/local/bin/vibereader"
+}
 
 echo ""
-echo "🐷 Done! Run with:"
-echo "   VibereaderMenuBar"
-echo ""
-echo "   To launch at login: System Settings > General > Login Items > add VibereaderMenuBar"
+echo "🐷 Done! Run:"
+echo "   vibereader"
