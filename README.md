@@ -1,6 +1,6 @@
 # Vibereader
 
-Curated tech news dashboard. One command.
+Curated tech news in your macOS menu bar. One command.
 
 ## Install
 
@@ -14,23 +14,25 @@ curl -sL https://raw.githubusercontent.com/TT-Wang/vibereader-menubar/main/insta
 vibereader
 ```
 
-Opens `http://localhost:8888` with your personalized news feed. Ctrl+C to stop.
+A 🐷 icon appears in your menu bar. Click it to browse headlines. That's it.
 
 ## What You Get
 
-- Live headlines from **15 sources** (HN, TechCrunch, Wired, Ars Technica, CoinDesk, Quanta, and more)
+- 🐷 pig icon in your menu bar — click to see headlines
+- 15 sources (HN, TechCrunch, Wired, Ars Technica, CoinDesk, Quanta, and more)
 - Articles scored by popularity + recency
-- Category tags (AI/ML, web dev, crypto, science, security, etc.)
-- One-click to read in browser
-- Works with just `feedparser` — `aiohttp` is optional
+- Category icons (🤖 AI, 🌐 web, ⚙️ systems, 🔒 security, 🔬 science, etc.)
+- Click any headline to open in browser
+- Auto-refreshes every 5 minutes
+- Web dashboard also available at http://localhost:8888
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---|---|
 | `vibereader: command not found` | `source ~/.zshrc` or restart terminal |
-| No articles | Wait a few seconds, click Refresh |
-| `pip install failed` | `python3 -m pip install --user feedparser aiohttp` |
+| No articles in menu | Wait a few seconds, click 🔄 Refresh |
+| `pip install failed` | `python3 -m pip install --user feedparser aiohttp rumps` |
 
 ## Also: Claude Code Plugin
 
