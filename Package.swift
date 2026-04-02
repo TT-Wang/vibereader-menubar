@@ -10,7 +10,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "VibereaderMenuBar",
-            path: "Sources/VibereaderMenuBar"
+            path: "Sources/VibereaderMenuBar",
+            exclude: ["Info.plist"]
         )
     ]
 )

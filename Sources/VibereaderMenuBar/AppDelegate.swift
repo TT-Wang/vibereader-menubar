@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import os.log
 
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     private let logger = Logger(subsystem: "com.vibereader.menubar", category: "AppDelegate")
     var statusItem: NSStatusItem!
