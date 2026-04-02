@@ -137,7 +137,7 @@ async def fetch_rss(url, limit=10):
         if _AIOHTTP:
             try:
                 async with aiohttp.ClientSession() as session:
-                    headers = {'User-Agent': 'Vibereader/0.3 (+https://github.com/TT-Wang/vibereader-menubar)'}
+                    headers = {'User-Agent': 'Vibereader/0.3 (+https://github.com/TT-Wang/vibereader)'}
                     async with session.get(url, timeout=aiohttp.ClientTimeout(total=15), headers=headers) as resp:
                         raw = await resp.text()
             except Exception:

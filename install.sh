@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Vibereader — one-liner install
-# curl -sL https://raw.githubusercontent.com/TT-Wang/vibereader-menubar/main/install.sh | bash
+# curl -sL https://raw.githubusercontent.com/TT-Wang/vibereader/main/install.sh | bash
 set -e
 
 DIR="$HOME/.vibereader-app"
 BIN_DIR="$HOME/.local/bin"
-BASE="https://raw.githubusercontent.com/TT-Wang/vibereader-menubar/main"
+BASE="https://raw.githubusercontent.com/TT-Wang/vibereader/main"
 
 # Find best Python (prefer 3.12/3.13 over 3.14+)
 PY=""

@@ -5,7 +5,7 @@ Curated tech news in your terminal. Runs alongside Claude Code in tmux. 🐷
 ## Install
 
 ```bash
-curl -sL https://raw.githubusercontent.com/TT-Wang/vibereader-menubar/main/install.sh | bash && source ~/.zshrc
+curl -sL https://raw.githubusercontent.com/TT-Wang/vibereader/main/install.sh | bash && source ~/.zshrc
 ```
 
 ## Run
@@ -68,7 +68,7 @@ While Claude works, vibereader detects the activity and auto-pushes new articles
 Get articles pushed inline while Claude works:
 
 ```bash
-claude plugin add github:TT-Wang/vibereader
+claude plugin add github:TT-Wang/vibereader-plugin
 ```
 
 ## License
