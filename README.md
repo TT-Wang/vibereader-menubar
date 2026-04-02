@@ -12,7 +12,7 @@ curl -sL https://raw.githubusercontent.com/TT-Wang/vibereader-menubar/main/insta
 
 Then run:
 ```bash
-VibereaderMenuBar
+~/vibereader-menubar/.build/debug/VibereaderMenuBar
 ```
 
 That's it. The script clones, installs deps, builds, and puts the binary in your PATH. The app auto-starts its Python backend — no separate server to run.
