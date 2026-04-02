@@ -1,6 +1,6 @@
 # Vibereader
 
-Curated tech news in your macOS menu bar. 🐷
+Curated tech news in your terminal. Runs alongside Claude Code in tmux. 🐷
 
 ## Install
 
@@ -14,18 +14,33 @@ curl -sL https://raw.githubusercontent.com/TT-Wang/vibereader-menubar/main/insta
 vibereader
 ```
 
-A 🐷 appears in your menu bar. Click it → 3 curated headlines with AI summaries. That's it.
+First run asks you to pick your sources and categories. Then the TUI launches.
+
+### tmux Split (recommended)
+
+```bash
+# Pane 1: Claude Code
+claude
+
+# Ctrl+b then % to split vertically
+
+# Pane 2: Vibereader
+vibereader
+```
+
+While Claude works, vibereader detects the activity and auto-pushes new articles.
 
 ## Features
 
-- 🐷 native macOS menu bar icon
-- **3 articles at a time** with AI summaries below each headline
-- **◀ ▶ page** through all articles, or **🔄 Refresh** to fetch new ones and advance
-- **⚙️ Sources** — toggle 15 sources on/off directly from the menu (saves instantly)
-- Auto-refreshes every 5 minutes
-- Runs locally — no server, no account, no signup
+- 🐷 rich terminal UI — runs in any terminal or tmux pane
+- **Onboarding** — pick from 15 sources and 8 categories on first run
+- **3 articles at a time** with AI summaries
+- **Auto-push** — detects Claude Code activity, rotates articles while Claude works
+- **Keyboard controls** — `n` next, `p` prev, `r` refresh, `q` quit
+- **Auto-fetch** every 5 minutes
+- Also available as macOS menu bar: `vibereader --menubar`
 
-## Sources (toggle in ⚙️ menu)
+## Sources (pick during setup)
 
 | Group | Sources |
 |---|---|
@@ -35,18 +50,26 @@ A 🐷 appears in your menu bar. Click it → 3 curated headlines with AI summar
 | 🔬 Science | New Scientist, Quanta Magazine, Science Daily |
 | 🚀 Other | Product Hunt, Reddit /r/programming |
 
+## Categories
+
+🤖 AI/ML · 🌐 Web Dev · ⚙️ Systems · 🔒 Security · ⛓️ Crypto · 🔬 Science · 🔧 DevTools · 📦 Open Source
+
 ## Troubleshooting
 
 | Problem | Fix |
 |---|---|
 | `command not found` | `source ~/.zshrc` or restart terminal |
-| No articles | Wait a few seconds, click 🔄 Refresh |
-| pip failed | `python3 -m pip install --user feedparser aiohttp rumps` |
+| SSL errors | `/Applications/Python\ 3.13/Install\ Certificates.command` |
+| No articles | Wait a few seconds, press `r` to refresh |
+| pip failed | `python3 -m pip install --user feedparser aiohttp rich` |
 
-## Requirements
+## Also: Claude Code Plugin
 
-- macOS
-- Python 3.9+
+Get articles pushed inline while Claude works:
+
+```bash
+claude plugin add github:TT-Wang/vibereader
+```
 
 ## License
 

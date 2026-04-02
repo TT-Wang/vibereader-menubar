@@ -7,7 +7,7 @@ DIR="$HOME/.vibereader-app"
 BIN_DIR="$HOME/.local/bin"
 BASE="https://raw.githubusercontent.com/TT-Wang/vibereader-menubar/main"
 
-# Find best Python (prefer 3.12/3.13 over 3.14+ which breaks rumps)
+# Find best Python (prefer 3.12/3.13 over 3.14+)
 PY=""
 for candidate in python3.12 python3.13 python3.11 python3; do
   if command -v "$candidate" &>/dev/null; then
@@ -28,29 +28,38 @@ mkdir -p "$DIR" "$BIN_DIR"
 # Download
 echo "  Downloading..."
 curl -sL "$BASE/fetch.py" -o "$DIR/fetch.py"
+curl -sL "$BASE/vibereader_tui.py" -o "$DIR/vibereader_tui.py"
 curl -sL "$BASE/vibereader_menubar.py" -o "$DIR/vibereader_menubar.py"
 
 # Install Python deps
 echo "  Installing dependencies..."
-if ! "$PY" -c "import feedparser, rumps" 2>/dev/null; then
-  "$PY" -m pip install feedparser aiohttp rumps 2>/dev/null \
-    || "$PY" -m pip install --user feedparser aiohttp rumps 2>/dev/null \
-    || "$PY" -m pip install --break-system-packages feedparser aiohttp rumps 2>/dev/null \
-    || { echo "  ⚠️  Run manually: $PY -m pip install --user feedparser aiohttp rumps"; exit 1; }
+if ! "$PY" -c "import feedparser, rich" 2>/dev/null; then
+  "$PY" -m pip install feedparser aiohttp rich 2>/dev/null \
+    || "$PY" -m pip install --user feedparser aiohttp rich 2>/dev/null \
+    || "$PY" -m pip install --break-system-packages feedparser aiohttp rich 2>/dev/null \
+    || { echo "  ⚠️  Run: $PY -m pip install --user feedparser aiohttp rich"; exit 1; }
 fi
 
-if ! "$PY" -c "import feedparser, rumps" 2>/dev/null; then
-  echo "  ⚠️  Missing deps. Run: $PY -m pip install --user feedparser aiohttp rumps"
+# Optional: rumps for macOS menu bar mode
+"$PY" -m pip install rumps 2>/dev/null \
+  || "$PY" -m pip install --user rumps 2>/dev/null \
+  || true  # rumps is optional, don't fail
+
+if ! "$PY" -c "import feedparser, rich" 2>/dev/null; then
+  echo "  ⚠️  Missing deps. Run: $PY -m pip install --user feedparser aiohttp rich"
   exit 1
 fi
 echo "  ✓ OK"
 
-# Create launcher with the detected Python
+# Create launcher
 cat > "$BIN_DIR/vibereader" <<LAUNCHER
 #!/usr/bin/env bash
-pkill -f "vibereader_menubar.py" 2>/dev/null || true
 cd "\$HOME/.vibereader-app"
-exec $PY vibereader_menubar.py
+if [ "\$1" = "--menubar" ]; then
+  exec $PY vibereader_menubar.py
+else
+  exec $PY vibereader_tui.py
+fi
 LAUNCHER
 chmod +x "$BIN_DIR/vibereader"
 
@@ -69,7 +78,8 @@ fi
 
 echo ""
 echo "🐷 Done! Run:"
-echo "   vibereader"
+echo "   vibereader              — terminal UI (for tmux)"
+echo "   vibereader --menubar    — macOS menu bar"
 echo ""
-echo "   A 🐷 appears in your menu bar. Click it to read."
+echo "   First run will ask you to pick sources + categories."
 echo "   If not found: source ~/.zshrc"
