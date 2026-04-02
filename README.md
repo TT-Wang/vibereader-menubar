@@ -4,17 +4,18 @@ Native macOS menu bar app for curated tech news. Standalone — works with or wi
 
 ![macOS 13+](https://img.shields.io/badge/macOS-13%2B-blue) ![Swift 5.9](https://img.shields.io/badge/Swift-5.9-orange)
 
-## Quick Start
+## Install
 
 ```bash
-git clone https://github.com/TT-Wang/vibereader-menubar.git
-cd vibereader-menubar
-pip install vibereader feedparser aiohttp
-swift build
-.build/debug/VibereaderMenuBar
+curl -sL https://raw.githubusercontent.com/TT-Wang/vibereader-menubar/main/install.sh | bash
 ```
 
-The app auto-starts its Python backend on launch — no separate server to run.
+Then run:
+```bash
+VibereaderMenuBar
+```
+
+That's it. The script clones, installs deps, builds, and puts the binary in your PATH. The app auto-starts its Python backend — no separate server to run.
 
 ## Features
 
